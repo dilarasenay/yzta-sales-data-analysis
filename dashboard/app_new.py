@@ -1,6 +1,12 @@
+# ========================================
+# BRAZIL E-COMMERCE DASHBOARD + RECOMMENDATION ENGINE
+# ========================================
+
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+from scipy.sparse import csr_matrix
+from sklearn.metrics.pairwise import cosine_similarity
 
 # ---------------- PAGE CONFIG ----------------
 
@@ -14,15 +20,12 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-
 /* SIDEBAR BACKGROUND */
-
 section[data-testid="stSidebar"] {
     background: linear-gradient(180deg,#0f2027,#203a43,#2c5364);
 }
 
 /* SIDEBAR TITLES */
-
 section[data-testid="stSidebar"] h1,
 section[data-testid="stSidebar"] h2,
 section[data-testid="stSidebar"] h3,
@@ -31,34 +34,91 @@ section[data-testid="stSidebar"] label {
 }
 
 /* DROPDOWN TEXT */
-
-section[data-testid="stSidebar"] .stSelectbox div {
-    color: black !important;
-}
-
 section[data-testid="stSidebar"] .stSelectbox div {
     color: white !important;
-
+}
 </style>
 """, unsafe_allow_html=True)
 
 # ---------------- DATA LOAD ----------------
-# ---------------- DATA LOAD ----------------
-import pandas as pd
-from pathlib import Path
 
 @st.cache_data
 def load_data():
-    base_dir = Path(__file__).resolve().parents[1]
-
-    df = pd.read_parquet(base_dir / "data" / "processed" / "fact_orders.parquet")
-    payments = pd.read_csv(base_dir / "data" / "raw" / "olist_order_payments_dataset.csv")
-
+    df = pd.read_parquet("data/processed/fact_orders.parquet")
+    payments = pd.read_csv("data/raw/olist_order_payments_dataset.csv")
     df["order_purchase_timestamp"] = pd.to_datetime(df["order_purchase_timestamp"])
-
     return df, payments
 
 df, payments = load_data()
+
+# ---------------- RECOMMENDATION ENGINE ----------------
+
+@st.cache_data
+def load_recommendation_engine(df):
+    category_col = "product_category_name_english" if "product_category_name_english" in df.columns else "product_category_name"
+    
+    df_cat = df[["order_id", category_col]].dropna().drop_duplicates().copy()
+    df_cat[category_col] = (
+        df_cat[category_col]
+        .astype(str)
+        .str.strip()
+        .str.replace("_", " ", regex=False)
+        .str.title()
+    )
+    
+    order_counts = df_cat.groupby("order_id", observed=True)[category_col].nunique()
+    multi_orders = order_counts[order_counts > 1].index
+    df_cat = df_cat[df_cat["order_id"].isin(multi_orders)].copy()
+    
+    df_cat["order_id"] = df_cat["order_id"].astype("category")
+    df_cat[category_col] = df_cat[category_col].astype("category")
+    df_cat["order_id"] = df_cat["order_id"].cat.remove_unused_categories()
+    df_cat[category_col] = df_cat[category_col].cat.remove_unused_categories()
+    
+    row = df_cat[category_col].cat.codes
+    col = df_cat["order_id"].cat.codes
+    n_categories = len(df_cat[category_col].cat.categories)
+    n_orders = len(df_cat["order_id"].cat.categories)
+    
+    category_order_matrix = csr_matrix(
+        ([1] * len(df_cat), (row, col)),
+        shape=(n_categories, n_orders)
+    )
+    
+    similarity = cosine_similarity(category_order_matrix, dense_output=False)
+    category_names = df_cat[category_col].cat.categories
+
+    return category_names, similarity
+
+category_names, similarity = load_recommendation_engine(df)
+
+def recommend_categories(category_name, top_n=5):
+    if category_name not in category_names:
+        return pd.DataFrame(columns=["recommended_category", "similarity_score"])
+
+    idx = category_names.get_loc(category_name)
+    sim_scores = similarity[idx].toarray().flatten()
+    similar_idx = sim_scores.argsort()[::-1]
+
+    recommendations = pd.DataFrame({
+        "recommended_category": category_names[similar_idx],
+        "similarity_score": sim_scores[similar_idx]
+    })
+
+    recommendations = recommendations[recommendations["recommended_category"] != category_name]
+    recommendations = recommendations[recommendations["similarity_score"] > 0]
+    recommendations = recommendations.drop_duplicates("recommended_category")
+
+    return recommendations.head(top_n).reset_index(drop=True)
+
+def recommendation_text(category_name, top_n=5):
+    recs = recommend_categories(category_name, top_n=top_n)
+    return {
+        "selected_category": category_name,
+        "title": f"Customers who bought {category_name} also bought:",
+        "items": recs["recommended_category"].tolist()
+    }
+
 # ---------------- SIDEBAR ----------------
 
 st.sidebar.title("🔎 Dashboard Filters")
@@ -89,7 +149,7 @@ st.markdown("""
 ### 🛍️ Sales • Customers • Delivery • Payments
 
 This interactive dashboard explores **sales performance, customer behavior,
-logistics efficiency and payment trends** using the **Brazilian Olist dataset**.
+logistics efficiency and payment trends** using the *Brazilian Olist dataset*.
 """)
 
 st.markdown("---")
@@ -206,40 +266,14 @@ with col3:
 with col4:
     st.plotly_chart(fig_products, use_container_width=True)
 
-# ---- Top Category Trend ----
+# ---- CATEGORY RECOMMENDATIONS ----
 
-st.subheader("📈 Top Category Revenue Trend")
-
-top_cats = (
-    df_filtered
-    .groupby("product_category_name_english")["total_item_value"]
-    .sum()
-    .nlargest(5)
-    .index
-)
-
-trend = df_filtered[df_filtered["product_category_name_english"].isin(top_cats)]
-
-trend_month = (
-    trend
-    .groupby([
-        trend["order_purchase_timestamp"].dt.to_period("M"),
-        "product_category_name_english"
-    ])["total_item_value"]
-    .sum()
-    .reset_index()
-)
-
-trend_month["order_purchase_timestamp"] = trend_month["order_purchase_timestamp"].astype(str)
-
-fig_trend = px.line(
-    trend_month,
-    x="order_purchase_timestamp",
-    y="total_item_value",
-    color="product_category_name_english"
-)
-
-st.plotly_chart(fig_trend, use_container_width=True)
+if selected_category != "All Categories":
+    rec_result = recommendation_text(selected_category, top_n=5)
+    st.subheader("🛒 Category Recommendations")
+    st.markdown(f"*{rec_result['title']}*")
+    for i, item in enumerate(rec_result["items"], start=1):
+        st.write(f"{i}. {item}")
 
 st.markdown("---")
 
@@ -300,7 +334,6 @@ cust_orders = (
 )
 
 repeat_rate = (cust_orders["order_count"] >= 2).mean() * 100
-
 st.metric("🔁 Repeat Customer Rate", f"{repeat_rate:.2f}%")
 
 cust_orders["segment"] = cust_orders["order_count"].apply(
@@ -325,14 +358,8 @@ st.markdown("---")
 st.header("🚚 Logistics Performance")
 
 df_delivered = df_filtered[df_filtered["order_status"] == "delivered"].copy()
-
 df_delivered["order_delivered_customer_date"] = pd.to_datetime(df_delivered["order_delivered_customer_date"])
-
-df_delivered["delivery_days"] = (
-    df_delivered["order_delivered_customer_date"]
-    - df_delivered["order_purchase_timestamp"]
-).dt.days
-
+df_delivered["delivery_days"] = (df_delivered["order_delivered_customer_date"] - df_delivered["order_purchase_timestamp"]).dt.days
 df_delivered = df_delivered[df_delivered["delivery_days"] < 60]
 
 fig_delivery = px.histogram(
@@ -377,7 +404,6 @@ st.markdown("---")
 st.header("💳 Payment Analytics")
 
 top_payment = payments["payment_type"].value_counts().idxmax()
-
 st.metric("Most Used Payment Method", top_payment)
 
 pay_counts = payments["payment_type"].value_counts().reset_index()
@@ -419,10 +445,9 @@ st.plotly_chart(fig_season, use_container_width=True)
 # ---------------- FOOTER ----------------
 
 st.markdown("---")
-
 st.caption(
 """
 Data Source: Brazilian Olist E-Commerce Dataset  
-Built with **Streamlit • Pandas • Plotly**
+Built with *Streamlit • Pandas • Plotly • Scikit-learn*
 """
-)
+) 
