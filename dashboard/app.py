@@ -511,7 +511,7 @@ if page == "Overview":
             fig.update_traces(line=dict(width=4))
             fig.update_layout(height=420, yaxis_title="Revenue")
             format_axis_as_month_year(fig)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig)
 
     with c2:
         if category_col and category_col in filtered_df.columns:
@@ -532,7 +532,7 @@ if page == "Overview":
                 color=category_col,
             )
             fig.update_layout(height=420, yaxis={"categoryorder": "total ascending"}, showlegend=False)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig)
 
     c3, c4 = st.columns(2)
 
@@ -552,7 +552,7 @@ if page == "Overview":
                 color=city_col,
             )
             fig.update_layout(showlegend=False)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig)
 
     with c4:
         if review_col and review_col in orders_unique.columns:
@@ -566,7 +566,7 @@ if page == "Overview":
                 title="Review Score Distribution",
                 hole=0.45,
             )
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig)
 
     st.markdown(
         """
@@ -595,7 +595,7 @@ elif page == "Trend Analysis":
             fig.update_traces(line=dict(width=4))
             fig.update_layout(yaxis_title="Revenue")
             format_axis_as_month_year(fig)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig)
 
     with c2:
         monthly_orders = create_monthly_series(orders_unique, date_col, count_mode=True)
@@ -609,7 +609,7 @@ elif page == "Trend Analysis":
             )
             fig.update_layout(yaxis_title="Orders", coloraxis_showscale=False)
             format_axis_as_month_year(fig)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig)
 
     if category_col:
         cat_trend = filtered_df.dropna(subset=[date_col, category_col]).copy()
@@ -639,7 +639,7 @@ elif page == "Trend Analysis":
         )
         fig.update_layout(yaxis_title="Revenue")
         format_axis_as_month_year(fig)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig)
 
     month_df = filtered_df.dropna(subset=[date_col]).copy()
     month_df["month"] = month_df[date_col].dt.month
@@ -663,7 +663,7 @@ elif page == "Trend Analysis":
         title="Seasonality Pattern"
     )
     fig.update_layout(yaxis_title="Revenue")
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig)
 
 elif page == "Sales Analysis":
     st.markdown('<div class="section-title">💰 Sales Analysis</div>', unsafe_allow_html=True)
@@ -683,7 +683,7 @@ elif page == "Sales Analysis":
             fig.update_traces(line=dict(width=4))
             fig.update_layout(yaxis_title="Orders")
             format_axis_as_month_year(fig)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig)
 
     with c2:
         month_df = filtered_df.dropna(subset=[date_col]).copy()
@@ -707,7 +707,7 @@ elif page == "Sales Analysis":
             title="Seasonality by Month",
             color="month_name"
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig)
 
     if product_col and product_col in filtered_df.columns:
         top_products = (
@@ -727,7 +727,7 @@ elif page == "Sales Analysis":
             hover_data={product_col: True, "product_short": False}
         )
         fig.update_xaxes(title_text="Product ID")
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig)
 
 elif page == "Customer Insights":
     st.markdown('<div class="section-title">👥 Customer Insights</div>', unsafe_allow_html=True)
@@ -753,7 +753,7 @@ elif page == "Customer Insights":
                 title="Customer Segments",
                 hole=0.45
             )
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig)
 
         with b:
             fig = px.histogram(
@@ -762,7 +762,7 @@ elif page == "Customer Insights":
                 nbins=20,
                 title="Orders per Customer Distribution",
             )
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig)
     else:
         st.warning("Customer insight için gerekli müşteri kolonu bulunamadı.")
 
@@ -783,7 +783,7 @@ elif page == "Logistics & Payments":
                 title="Order Status Distribution",
                 hole=0.45
             )
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig)
 
         if {
             "order_purchase_timestamp",
@@ -811,7 +811,7 @@ elif page == "Logistics & Payments":
                     nbins=30,
                     title="Delivery Days Distribution",
                 )
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig)
 
     with c2:
         if not payments.empty and "payment_type" in payments.columns:
@@ -825,7 +825,7 @@ elif page == "Logistics & Payments":
                 title="Payment Methods",
                 color="payment_type"
             )
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig)
 
             if "payment_installments" in payments.columns:
                 inst = payments["payment_installments"].value_counts().sort_index().reset_index()
@@ -839,7 +839,7 @@ elif page == "Logistics & Payments":
                     title="Installment Usage"
                 )
                 fig.update_traces(line=dict(width=4))
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig)
         else:
             st.info("Ödeme dosyası bulunamadı ya da payment_type kolonu eksik.")
 
@@ -892,7 +892,7 @@ elif page == "Recommendation Engine":
             recs_display = recs.copy()
             recs_display["recommended_category"] = recs_display["recommended_category"].apply(pretty_category_name)
             recs_display["similarity_score"] = recs_display["similarity_score"].map(lambda x: f"{x:.2%}")
-            st.dataframe(recs_display, use_container_width=True)
+            st.dataframe(recs_display)
     else:
         st.error("Recommendation engine oluşturulamadı. Kategori ve sipariş verisini kontrol et.")
 
